@@ -112,7 +112,11 @@ wire				      refill;
 wire				      invalidate;
 
 reg [WAY_WIDTH-1:OPTION_ICACHE_BLOCK_WIDTH] invalidate_adr;
+wire [31:0]       next_refill_adr;
 wire 			      refill_done;
+wire       refill_hit;
+reg [(1<<(OPTION_ICACHE_BLOCK_WIDTH-2))-1:0] refill_valid;
+reg [(1<<(OPTION_ICACHE_BLOCK_WIDTH-2))-1:0] refill_valid_r;
 
 // The index we read and write from tag memory
 wire [OPTION_ICACHE_SET_WIDTH-1:0] tag_rindex;
@@ -233,13 +237,17 @@ always @(*) begin
 
     // Put correct way on the data port
     for (w0 = 0; w0 < OPTION_ICACHE_WAYS; w0 = w0 + 1) begin
-        if (way_hit[w0]) begin
+        if (way_hit[w0] | (refill_hit & tag_save_lru[w0])) begin
             // Select the correct block
             data_from_cache = way_dout[w0][block_index +: OPTION_OPERAND_WIDTH];
             cpu_dat_o = (l15_transducer_nc) ? wrdat_i[31:0] : data_from_cache;
         end
     end
 end
+
+assign next_refill_adr = (OPTION_ICACHE_BLOCK_WIDTH == 5) ?
+   {wradr_i[31:5], wradr_i[4:0] + 5'd4} : // 32 byte
+   {wradr_i[31:4], wradr_i[3:0] + 4'd4};  // 16 byte
 
 assign transducer_l15_l1rplway = 
    (tag_save_lru == 4'b0001) ? 2'd0 : 
@@ -248,7 +256,11 @@ assign transducer_l15_l1rplway =
    (tag_save_lru == 4'b1000) ? 2'd3 : 2'd0; 
 
 assign refill_done_o = refill_done;
-assign refill_done = we_i;
+assign refill_done = refill_valid[next_refill_adr[OPTION_ICACHE_BLOCK_WIDTH-1:2]];
+assign refill_hit = refill_valid_r[cpu_adr_match_i[OPTION_ICACHE_BLOCK_WIDTH-1:2]] &
+			  cpu_adr_match_i[OPTION_ICACHE_LIMIT_WIDTH-1: OPTION_ICACHE_BLOCK_WIDTH] ==
+			wradr_i[OPTION_ICACHE_LIMIT_WIDTH-1: OPTION_ICACHE_BLOCK_WIDTH] &
+		   	refill;
 
 assign refill = (state == REFILL);
 assign read = (state == READ);
@@ -269,6 +281,7 @@ assign invalidate_o = spr_bus_stb_i & spr_bus_we_i &
  */
 integer w1;
 always @(posedge clk `OR_ASYNC_RST) begin
+	refill_valid_r <= refill_valid;
     if (rst) begin
         tag_save_lru <= 4'b0;
     end
@@ -301,8 +314,11 @@ always @(posedge clk `OR_ASYNC_RST) begin
         end
 
         REFILL: begin
-            if (refill_done) begin
-                state <= IDLE;
+			if (we_i) begin
+				refill_valid[wradr_i[OPTION_ICACHE_BLOCK_WIDTH-1:2]] <= 1;
+
+				if (refill_done) 
+					state <= IDLE;
             end
         end
 
@@ -364,6 +380,17 @@ always @(*) begin
 
                 // Access pattern
                 access = tag_save_lru;
+
+				/* Invalidate the way on the first write */
+				if (refill_valid == 0) begin
+					for (w2 = 0; w2 < OPTION_ICACHE_WAYS; w2 = w2 + 1) begin
+						if (tag_save_lru[w2]) begin
+							tag_way_in[w2][TAGMEM_WAY_VALID] = 1'b0;
+						end
+					end
+
+					tag_we = 1'b1;
+				end
 
                 // After refill update the tag memory entry of the
                 // filled way with the LRU history, the tag and set

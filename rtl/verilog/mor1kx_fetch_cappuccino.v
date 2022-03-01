@@ -28,8 +28,8 @@ module mor1kx_fetch_cappuccino
     parameter OPTION_RF_ADDR_WIDTH = 5,
     parameter FEATURE_INSTRUCTIONCACHE = "NONE",
     parameter OPTION_ICACHE_BLOCK_WIDTH = 5,
-    parameter OPTION_ICACHE_SET_WIDTH = 9,
-    parameter OPTION_ICACHE_WAYS = 2,
+    parameter OPTION_ICACHE_SET_WIDTH = 7,
+    parameter OPTION_ICACHE_WAYS = 4,
     parameter OPTION_ICACHE_LIMIT_WIDTH = 32,
     parameter FEATURE_IMMU = "NONE",
     parameter FEATURE_IMMU_HW_TLB_RELOAD = "NONE",
@@ -388,8 +388,7 @@ pc_fetch <= pc_addr;
 
    wire   ibus_access;
 
-   wire [OPTION_ICACHE_BLOCK_WIDTH+2:0] block_index;
-   assign block_index = ic_addr[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
+   reg [OPTION_ICACHE_BLOCK_WIDTH+2:0] block_index;
 
    //
    // Under certain circumstances, there is a need to insert an nop
@@ -428,61 +427,67 @@ ibus_ack;
      else
       imem_err <= l15_transducer_error;
 
-   always @(posedge clk) begin
+  always @(posedge clk) begin
       if (rst) begin
-         transducer_l15_val_r <= 1'b0;
+          transducer_l15_val_r <= 1'b0;
       end
       ibus_ack <= 0;
       exception_while_tlb_reload <= 0;
       tlb_reload_ack <= 0;
 
-     if (l15_transducer_header_ack) begin
-       transducer_l15_val_r <= 0;
-     end
+      if (l15_transducer_header_ack) begin
+          transducer_l15_val_r <= 0;
+      end
       case (state)
-IDLE: begin
-   ibus_req <= 0;
-   if (padv_i & ibus_access & !ibus_ack & !imem_err & !nop_ack) begin
-      if (tlb_reload_req) begin
-        transducer_l15_val_r <= 1;
- ibus_adr <= tlb_reload_addr;
- ibus_req <= 1;
- state <= TLB_RELOAD;
-      end else if (immu_enable_i) begin
- ibus_adr <= immu_phys_addr;
- if (!tlb_miss & !pagefault & !immu_busy) begin
-        transducer_l15_val_r <= 1;
-    ibus_req <= 1;
-    state <= READ;
- end
-      end else if (!ctrl_branch_exception_i | doing_rfe_i) begin
-        transducer_l15_val_r <= 1;
- ibus_adr <= pc_fetch;
- ibus_req <= 1;
- state <= READ;
-      end
-   end else if (ic_refill_req) begin
-        transducer_l15_val_r <= 1;
-      ibus_adr <= ic_addr_match;
-      ibus_req <= 1;
-      state <= IC_REFILL;
-   end
-end
+          IDLE: begin
+              ibus_req <= 0;
+              if (padv_i & ibus_access & !ibus_ack & !imem_err & !nop_ack) begin
+                  if (tlb_reload_req) begin
+                      transducer_l15_val_r <= 1;
+                      block_index <= ic_addr[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
+                      ibus_adr <= tlb_reload_addr;
+                      ibus_req <= 1;
+                      state <= TLB_RELOAD;
+                  end else if (immu_enable_i) begin
+                      ibus_adr <= immu_phys_addr;
+                      if (!tlb_miss & !pagefault & !immu_busy) begin
+                          transducer_l15_val_r <= 1;
+                          block_index <= ic_addr[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
+                          ibus_req <= 1;
+                          state <= READ;
+                      end
+                  end else if (!ctrl_branch_exception_i | doing_rfe_i) begin
+                      transducer_l15_val_r <= 1;
+                      block_index <= ic_addr[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
+                      ibus_adr <= pc_fetch;
+                      ibus_req <= 1;
+                      state <= READ;
+                  end
+              end else if (ic_refill_req) begin
+                  transducer_l15_val_r <= 1;
+                  block_index <= ic_addr[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
+                  ibus_adr <= ic_addr_match;
+                  ibus_req <= 1;
+                  state <= IC_REFILL;
+              end
+          end
 
-IC_REFILL: begin
-   ibus_req <= 1;
-   if (l15_refill_ack) begin
-      ibus_adr <= next_ibus_adr;
-      if (ic_refill_done) begin
- ibus_req <= 0;
- state <= IDLE;
-      end
-   end
-   if (l15_transducer_error) begin
-      ibus_req <= 0;
-      state <= IDLE;
-   end
-end
+          IC_REFILL: begin
+              transducer_l15_val_r <= 1;
+              block_index <= ic_addr[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
+              ibus_req <= 1;
+              if (l15_refill_ack) begin
+                  ibus_adr <= next_ibus_adr;
+                  if (ic_refill_done) begin
+                      ibus_req <= 0;
+                      state <= IDLE;
+                  end
+              end
+              if (l15_transducer_error) begin
+                  ibus_req <= 0;
+                  state <= IDLE;
+              end
+          end
 
 READ: begin
    ibus_ack <= l15_refill_ack;
