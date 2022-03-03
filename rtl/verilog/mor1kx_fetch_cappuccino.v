@@ -381,7 +381,6 @@ pc_fetch <= pc_addr;
 
    reg [2:0] state;
 
-   wire [OPTION_OPERAND_WIDTH-1:0] next_ibus_adr;
    reg [255:0] ibus_dat;
    reg   ibus_req;
    reg   ibus_ack;
@@ -416,10 +415,6 @@ ibus_ack;
    assign imem_dat = (nop_ack | except_itlb_miss | except_ipagefault) ?
      {`OR1K_OPCODE_NOP,26'd0} :
      ibus_access ? ibus_dat[block_index +: OPTION_OPERAND_WIDTH] : ic_dat;
-
-   assign next_ibus_adr = (OPTION_ICACHE_BLOCK_WIDTH == 5) ?
-  {ibus_adr[31:5], ibus_adr[4:0] + 5'd4} : // 32 byte
-  {ibus_adr[31:4], ibus_adr[3:0] + 4'd4};  // 16 byte
 
    always @(posedge clk `OR_ASYNC_RST)
      if (rst)
@@ -473,17 +468,11 @@ ibus_ack;
           end
 
           IC_REFILL: begin
-              transducer_l15_val_r <= 1;
-              block_index <= ic_addr[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
               ibus_req <= 1;
-              if (l15_refill_ack) begin
-                  ibus_adr <= next_ibus_adr;
-                  if (ic_refill_done) begin
-                      ibus_req <= 0;
-                      state <= IDLE;
-                  end
-              end
-              if (l15_transducer_error) begin
+              block_index <= ic_addr[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
+              if (ic_refill_done | l15_transducer_error) begin
+                  ibus_adr <= ic_addr;
+                  transducer_l15_val_r <= 0;
                   ibus_req <= 0;
                   state <= IDLE;
               end

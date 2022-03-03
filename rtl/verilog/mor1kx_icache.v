@@ -112,11 +112,11 @@ wire				      refill;
 wire				      invalidate;
 
 reg [WAY_WIDTH-1:OPTION_ICACHE_BLOCK_WIDTH] invalidate_adr;
-wire [31:0]       next_refill_adr;
-wire 			      refill_done;
-wire       refill_hit;
-reg [(1<<(OPTION_ICACHE_BLOCK_WIDTH-2))-1:0] refill_valid;
-reg [(1<<(OPTION_ICACHE_BLOCK_WIDTH-2))-1:0] refill_valid_r;
+wire [31:0]                                 next_refill_adr;
+reg                                         refill_done;
+reg                                         refill_done_r;
+
+reg [OPTION_OPERAND_WIDTH-1:0] cpu_adr_i_r;
 
 // The index we read and write from tag memory
 wire [OPTION_ICACHE_SET_WIDTH-1:0] tag_rindex;
@@ -200,33 +200,33 @@ assign tag_tag = cpu_adr_match_i[OPTION_ICACHE_LIMIT_WIDTH-1:WAY_WIDTH];
 assign tag_wtag = wradr_i[OPTION_ICACHE_LIMIT_WIDTH-1:WAY_WIDTH];
 
 generate
-    if (OPTION_ICACHE_WAYS >= 2) begin
-        // Multiplex the LRU history from and to tag memory
-        assign current_lru_history = tag_dout[TAG_LRU_MSB:TAG_LRU_LSB];
-        assign tag_din[TAG_LRU_MSB:TAG_LRU_LSB] = tag_lru_in;
-        assign tag_lru_out = tag_dout[TAG_LRU_MSB:TAG_LRU_LSB];
-    end
+if (OPTION_ICACHE_WAYS >= 2) begin
+    // Multiplex the LRU history from and to tag memory
+    assign current_lru_history = tag_dout[TAG_LRU_MSB:TAG_LRU_LSB];
+    assign tag_din[TAG_LRU_MSB:TAG_LRU_LSB] = tag_lru_in;
+    assign tag_lru_out = tag_dout[TAG_LRU_MSB:TAG_LRU_LSB];
+end
 
-    for (i = 0; i < OPTION_ICACHE_WAYS; i=i+1) begin : ways
-        assign way_raddr[i] = cpu_adr_i[WAY_WIDTH-1:OPTION_ICACHE_BLOCK_WIDTH];
-        assign way_waddr[i] = wradr_i[WAY_WIDTH-1:OPTION_ICACHE_BLOCK_WIDTH];
-        assign way_din[i] = wrdat_i;
+for (i = 0; i < OPTION_ICACHE_WAYS; i=i+1) begin : ways
+    assign way_raddr[i] = cpu_adr_i[WAY_WIDTH-1:OPTION_ICACHE_BLOCK_WIDTH];
+    assign way_waddr[i] = wradr_i[WAY_WIDTH-1:OPTION_ICACHE_BLOCK_WIDTH];
+    assign way_din[i] = wrdat_i;
 
-        // compare stored tag with incoming tag and check valid bit
-        assign check_way_tag[i] = tag_way_out[i][TAG_WIDTH-1:0];
-        assign check_way_match[i] = (check_way_tag[i] == tag_tag);
-        assign check_way_valid[i] = tag_way_out[i][TAGMEM_WAY_VALID];
+    // compare stored tag with incoming tag and check valid bit
+    assign check_way_tag[i] = tag_way_out[i][TAG_WIDTH-1:0];
+    assign check_way_match[i] = (check_way_tag[i] == tag_tag);
+    assign check_way_valid[i] = tag_way_out[i][TAGMEM_WAY_VALID];
 
-        assign way_hit[i] = check_way_valid[i] & check_way_match[i];
+    assign way_hit[i] = check_way_valid[i] & check_way_match[i];
 
-        // Multiplex the way entries in the tag memory
-        assign tag_din[(i+1)*TAGMEM_WAY_WIDTH-1:i*TAGMEM_WAY_WIDTH] = tag_way_in[i];
-        assign tag_way_out[i] = tag_dout[(i+1)*TAGMEM_WAY_WIDTH-1:i*TAGMEM_WAY_WIDTH];
-    end
-    endgenerate
+    // Multiplex the way entries in the tag memory
+    assign tag_din[(i+1)*TAGMEM_WAY_WIDTH-1:i*TAGMEM_WAY_WIDTH] = tag_way_in[i];
+    assign tag_way_out[i] = tag_dout[(i+1)*TAGMEM_WAY_WIDTH-1:i*TAGMEM_WAY_WIDTH];
+end
+endgenerate
 
-        // Get block index bit position aligned to word
-        assign block_index = cpu_adr_i[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
+// Get block index bit position aligned to word
+assign block_index = cpu_adr_i_r[OPTION_ICACHE_BLOCK_WIDTH-1:0] << 3;
 
 assign hit = |way_hit;
 assign cache_hit_o = hit;
@@ -237,30 +237,24 @@ always @(*) begin
 
     // Put correct way on the data port
     for (w0 = 0; w0 < OPTION_ICACHE_WAYS; w0 = w0 + 1) begin
-        if (way_hit[w0] | (refill_hit & tag_save_lru[w0])) begin
+        if (way_hit[w0]) begin
             // Select the correct block
-            data_from_cache = way_dout[w0][block_index +: OPTION_OPERAND_WIDTH];
-            cpu_dat_o = (l15_transducer_nc) ? wrdat_i[31:0] : data_from_cache;
+            cpu_dat_o  = way_dout[w0][block_index +: OPTION_OPERAND_WIDTH];
         end
     end
 end
 
 assign next_refill_adr = (OPTION_ICACHE_BLOCK_WIDTH == 5) ?
-   {wradr_i[31:5], wradr_i[4:0] + 5'd4} : // 32 byte
-   {wradr_i[31:4], wradr_i[3:0] + 4'd4};  // 16 byte
+    {wradr_i[31:5], wradr_i[4:0] + 5'd4} : // 32 byte
+    {wradr_i[31:4], wradr_i[3:0] + 4'd4};  // 16 byte
 
 assign transducer_l15_l1rplway = 
-   (tag_save_lru == 4'b0001) ? 2'd0 : 
+    (tag_save_lru == 4'b0001) ? 2'd0 : 
    (tag_save_lru == 4'b0010) ? 2'd1 :
    (tag_save_lru == 4'b0100) ? 2'd2 :
    (tag_save_lru == 4'b1000) ? 2'd3 : 2'd0; 
 
-assign refill_done_o = refill_done;
-assign refill_done = refill_valid[next_refill_adr[OPTION_ICACHE_BLOCK_WIDTH-1:2]];
-assign refill_hit = refill_valid_r[cpu_adr_match_i[OPTION_ICACHE_BLOCK_WIDTH-1:2]] &
-			  cpu_adr_match_i[OPTION_ICACHE_LIMIT_WIDTH-1: OPTION_ICACHE_BLOCK_WIDTH] ==
-			wradr_i[OPTION_ICACHE_LIMIT_WIDTH-1: OPTION_ICACHE_BLOCK_WIDTH] &
-		   	refill;
+assign refill_done_o = refill_done_r;
 
 assign refill = (state == REFILL);
 assign read = (state == READ);
@@ -281,10 +275,9 @@ assign invalidate_o = spr_bus_stb_i & spr_bus_we_i &
  */
 integer w1;
 always @(posedge clk `OR_ASYNC_RST) begin
-	refill_valid_r <= refill_valid;
-    if (rst) begin
-        tag_save_lru <= 4'b0;
-    end
+    cpu_adr_i_r <= cpu_adr_i;
+    refill_done <= we_i;
+    refill_done_r <= refill_done;
     spr_bus_ack_o <= 0;
     case (state)
         IDLE: begin
@@ -314,11 +307,8 @@ always @(posedge clk `OR_ASYNC_RST) begin
         end
 
         REFILL: begin
-			if (we_i) begin
-				refill_valid[wradr_i[OPTION_ICACHE_BLOCK_WIDTH-1:2]] <= 1;
-
-				if (refill_done) 
-					state <= IDLE;
+            if (refill_done)  begin
+                state <= READ;
             end
         end
 
@@ -376,36 +366,23 @@ always @(*) begin
             if (we_i) begin
                 // Write the data to the way that is replaced (which is
                 // the LRU)
-                way_we = (l15_transducer_nc) ? 4'b0 : tag_save_lru;
+                way_we = tag_save_lru;
 
                 // Access pattern
                 access = tag_save_lru;
 
-				/* Invalidate the way on the first write */
-				if (refill_valid == 0) begin
-					for (w2 = 0; w2 < OPTION_ICACHE_WAYS; w2 = w2 + 1) begin
-						if (tag_save_lru[w2]) begin
-							tag_way_in[w2][TAGMEM_WAY_VALID] = 1'b0;
-						end
-					end
-
-					tag_we = 1'b1;
-				end
-
                 // After refill update the tag memory entry of the
                 // filled way with the LRU history, the tag and set
                 // valid to 1.
-                if (refill_done) begin
-                    for (w2 = 0; w2 < OPTION_ICACHE_WAYS; w2 = w2 + 1) begin
-                        tag_way_in[w2] = tag_way_save[w2];
-                        if (tag_save_lru[w2]) begin
-                            tag_way_in[w2] = { 1'b1, tag_wtag };
-                        end
+                for (w2 = 0; w2 < OPTION_ICACHE_WAYS; w2 = w2 + 1) begin
+                    tag_way_in[w2] = tag_way_save[w2];
+                    if (tag_save_lru[w2]) begin
+                        tag_way_in[w2] = { 1'b1, tag_wtag };
                     end
-                    tag_lru_in = next_lru_history;
-
-                    tag_we = !l15_transducer_nc;
                 end
+                tag_lru_in = next_lru_history;
+
+                tag_we = 1'b1;
             end
         end
 
