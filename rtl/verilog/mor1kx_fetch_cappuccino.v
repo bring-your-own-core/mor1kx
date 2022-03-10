@@ -57,19 +57,20 @@ module mor1kx_fetch_cappuccino
 
     // TRI interface
     output          transducer_l15_val,
-    // output [4:0]    transducer_l15_rqtype,
+    output [4:0]    transducer_l15_rqtype,
     // output [3:0]    transducer_l15_amo_op,
     output          transducer_l15_nc,
-    // output [2:0]    transducer_l15_size,
+    output [2:0]    transducer_l15_size,
     // output          transducer_l15_prefetch,
     // output          transducer_l15_invalidate_cacheline,
     // output          transducer_l15_blockstore,
     // output          transducer_l15_blockinitstore,
     output [1:0]    transducer_l15_l1rplway,
     output [39:0]   transducer_l15_address,
-    output [63:0]   transducer_l15_data,
+    // output [63:0]   transducer_l15_data,
     // output [63:0]   transducer_l15_data_next_entry,
     // output [32:0]   transducer_l15_csm_data,
+    output          transducer_l15_req_ack,
 
     input          l15_transducer_header_ack,
     input          l15_transducer_ack,
@@ -97,7 +98,6 @@ module mor1kx_fetch_cappuccino
     // input [1:0]    l15_transducer_inval_way,
     // input          l15_transducer_blockinitstore,
 
-    output          transducer_l15_req_ack,
 
     // interface to ibus
     // input   ibus_err_i,
@@ -200,10 +200,16 @@ module mor1kx_fetch_cappuccino
    reg   exception_while_tlb_reload;
    wire   except_ipagefault_clear;
 
+   wire ic_enabled;
+
    reg [OPTION_OPERAND_WIDTH-1:0] ibus_adr;
    reg transducer_l15_val_r;
    assign transducer_l15_val = transducer_l15_val_r;
    assign transducer_l15_req_ack = l15_transducer_val;
+
+   assign transducer_l15_nc = !ic_enabled;
+   assign transducer_l15_size = `MSG_DATA_SIZE_32B;
+   assign transducer_l15_rqtype = `PCX_REQTYPE_IFILL;
 
    wire l15_refill_ack;
    assign l15_refill_ack = l15_transducer_val & (l15_transducer_returntype == `CPX_RESTYPE_IFILL1);
@@ -531,7 +537,7 @@ if (FEATURE_INSTRUCTIONCACHE!="NONE") begin : icache_gen
        ic_enable_r <= 1;
      else if (!ic_enable & !ic_refill)
        ic_enable_r <= 0;
-   wire ic_enabled = ic_enable & ic_enable_r;
+   assign ic_enabled = ic_enable & ic_enable_r;
    wire ic_refill_allowed = (!((tlb_miss | pagefault) & immu_enable_i) &
       !ctrl_branch_exception_i & !pipeline_flush_i &
       !mispredict_stall | doing_rfe_i) &

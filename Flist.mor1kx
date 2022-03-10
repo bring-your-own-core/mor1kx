@@ -9,6 +9,7 @@ rtl/verilog/mor1kx_bus_if_wb32.v
 rtl/verilog/mor1kx_cache_lru.v
 rtl/verilog/mor1kx_cfgrs.v
 rtl/verilog/mor1kx_cpu_cappuccino.v
+rtl/verilog/mor1kx_l15_arbiter.v
 rtl/verilog/mor1kx_ctrl_cappuccino.v
 rtl/verilog/mor1kx_dcache.v
 rtl/verilog/mor1kx_decode_execute_cappuccino.v

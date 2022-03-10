@@ -219,6 +219,44 @@ module mor1kx_cpu_cappuccino
     input 			     snoop_en_i
     );
 
+   wire        icache_transducer_l15_val_cpu;
+   wire [4:0]  icache_transducer_l15_rqtype_cpu;
+   wire        icache_transducer_l15_nc_cpu;
+   wire [2:0]  icache_transducer_l15_size_cpu;
+   wire [1:0]  icache_transducer_l15_l1rplway_cpu;
+   wire [39:0] icache_transducer_l15_address_cpu;
+   wire        icache_transducer_l15_req_ack_cpu;
+
+   wire        icache_l15_transducer_header_ack_cpu;
+   wire        icache_l15_transducer_ack_cpu;
+   wire        icache_l15_transducer_val_cpu;
+   wire [3:0]  icache_l15_transducer_returntype_cpu;
+   wire [1:0]  icache_l15_transducer_error_cpu;
+   wire        icache_l15_transducer_noncacheable_cpu;
+   wire [63:0] icache_l15_transducer_data_0_cpu;
+   wire [63:0] icache_l15_transducer_data_1_cpu;
+   wire [63:0] icache_l15_transducer_data_2_cpu;
+   wire [63:0] icache_l15_transducer_data_3_cpu;
+
+   wire        dcache_transducer_l15_val_cpu;
+   wire [4:0]  dcache_transducer_l15_rqtype_cpu;
+   wire [2:0]  dcache_transducer_l15_size_cpu;
+   wire        dcache_transducer_l15_nc_cpu;
+   wire [1:0]  dcache_transducer_l15_l1rplway_cpu;
+   wire [39:0] dcache_transducer_l15_address_cpu;
+   wire        dcache_transducer_l15_req_ack_cpu;
+
+   wire        dcache_l15_transducer_header_ack_cpu;
+   wire        dcache_l15_transducer_ack_cpu;
+   wire        dcache_l15_transducer_val_cpu;
+   wire [3:0]  dcache_l15_transducer_returntype_cpu;
+   wire [1:0]  dcache_l15_transducer_error_cpu;
+   wire        dcache_l15_transducer_noncacheable_cpu;
+   wire [63:0] dcache_l15_transducer_data_0_cpu;
+   wire [63:0] dcache_l15_transducer_data_1_cpu;
+   wire [63:0] dcache_l15_transducer_data_2_cpu;
+   wire [63:0] dcache_l15_transducer_data_3_cpu;
+
    wire transducer_l15_val_ungated;
    wire [OPTION_OPERAND_WIDTH-1:0]   pc_fetch_to_decode;
    wire [`OR1K_INSN_WIDTH-1:0] 	     insn_fetch_to_decode;
@@ -465,6 +503,74 @@ module mor1kx_cpu_cappuccino
     .immu_enable_i			(spr_sr_o[`OR1K_SPR_SR_IME]),
     .supervisor_mode_i			(spr_sr_o[`OR1K_SPR_SR_SM]),
     ); */
+   mor1kx_l15_arbiter #() mor1kx_l15_arbiter
+   (
+     .clk(clk),
+     .rst(rst),
+
+     // icache
+     .icache_transducer_l15_val(icache_transducer_l15_val_cpu),
+     .icache_transducer_l15_rqtype(icache_transducer_l15_rqtype_cpu),
+     .icache_transducer_l15_nc(icache_transducer_l15_nc_cpu),
+     .icache_transducer_l15_size(icache_transducer_l15_size_cpu),
+     .icache_transducer_l15_l1rplway(icache_transducer_l15_l1rplway_cpu),
+     .icache_transducer_l15_address(icache_transducer_l15_address_cpu),
+
+     .icache_l15_transducer_header_ack(icache_l15_transducer_header_ack_cpu),
+     .icache_l15_transducer_ack(icache_l15_transducer_ack_cpu),
+     .icache_l15_transducer_val(icache_l15_transducer_val_cpu),
+     .icache_l15_transducer_returntype(icache_l15_transducer_returntype_cpu),
+     .icache_l15_transducer_error(icache_l15_transducer_error_cpu),
+     .icache_l15_transducer_noncacheable(icache_l15_transducer_noncacheable_cpu),
+     .icache_l15_transducer_data_0(icache_l15_transducer_data_0_cpu),
+     .icache_l15_transducer_data_1(icache_l15_transducer_data_1_cpu),
+     .icache_l15_transducer_data_2(icache_l15_transducer_data_2_cpu),
+     .icache_l15_transducer_data_3(icache_l15_transducer_data_3_cpu),
+
+     .icache_transducer_l15_req_ack(icache_transducer_l15_req_ack_cpu),
+     // dcache
+     // input        dcache_transducer_l15_val,
+     //   input [4:0]  dcache_transducer_l15_rqtype,
+     //   input [2:0]  dcache_transducer_l15_size,
+     //   input        dcache_transducer_l15_nc,
+     //   input [1:0]  dcache_transducer_l15_l1rplway,
+     //   input [39:0] dcache_transducer_l15_address,
+
+     //   output        dcache_l15_transducer_header_ack,
+     //   output        dcache_l15_transducer_ack,
+     //   output        dcache_l15_transducer_val,
+     //   output [3:0]  dcache_l15_transducer_returntype,
+     //   output [1:0]  dcache_l15_transducer_error,
+     //   output        dcache_l15_transducer_noncacheable,
+     //   output [63:0] dcache_l15_transducer_data_0,
+     //   output [63:0] dcache_l15_transducer_data_1,
+     //   output [63:0] dcache_l15_transducer_data_2,
+     //   output [63:0] dcache_l15_transducer_data_3,
+
+     //   input        dcache_transducer_l15_req_ack,
+     // l15
+     .l15_transducer_val(l15_transducer_val),
+     .l15_transducer_header_ack(l15_transducer_header_ack),
+     .l15_transducer_ack(l15_transducer_ack),
+     .l15_transducer_returntype(l15_transducer_returntype),
+     .l15_transducer_error(l15_transducer_error),
+     .l15_transducer_noncacheable(l15_transducer_noncacheable),
+     .l15_transducer_data_0(l15_transducer_data_0),
+     .l15_transducer_data_1(l15_transducer_data_1),
+     .l15_transducer_data_2(l15_transducer_data_2),
+     .l15_transducer_data_3(l15_transducer_data_3),
+
+     .transducer_l15_val(transducer_l15_val_ungated),
+     .transducer_l15_rqtype(transducer_l15_rqtype),
+     .transducer_l15_amo_op(transducer_l15_amo_op),
+     .transducer_l15_nc(transducer_l15_nc),
+     .transducer_l15_size(transducer_l15_size),
+     .transducer_l15_l1rplway(transducer_l15_l1rplway),
+     .transducer_l15_address(transducer_l15_address),
+     .transducer_l15_data(transducer_l15_data),
+
+     .transducer_l15_req_ack(transducer_l15_req_ack));
+
    mor1kx_fetch_cappuccino
      #(
        .OPTION_OPERAND_WIDTH(OPTION_OPERAND_WIDTH),
@@ -527,48 +633,25 @@ module mor1kx_cpu_cappuccino
       .pipeline_flush_i                 (pipeline_flush_o),      // Templated
       .doing_rfe_i                      (doing_rfe_o),           // Templated
       // TRI
-      .transducer_l15_val                         (transducer_l15_val_ungated),
-      //.transducer_l15_rqtype                      (transducer_l15_rqtype),
-      //.transducer_l15_amo_op                      (transducer_l15_amo_op),
-      .transducer_l15_nc                          (transducer_l15_nc),
-      //.transducer_l15_size                        (transducer_l15_size),
-      //.transducer_l15_prefetch                    (transducer_l15_prefetch),
-      //.transducer_l15_invalidate_cacheline        (transducer_l15_invalidate_cacheline),
-      //.transducer_l15_blockstore                  (transducer_l15_blockstore),
-      //.transducer_l15_blockinitstore              (transducer_l15_blockinitstore),
-      .transducer_l15_l1rplway                    (transducer_l15_l1rplway),
-      .transducer_l15_address                     (transducer_l15_address),
-      .transducer_l15_data                        (transducer_l15_data),
-      //.transducer_l15_data_next_entry             (transducer_l15_data_next_entry),
-      //.transducer_l15_csm_data                    (transducer_l15_csm_data),
+      .transducer_l15_val           (icache_transducer_l15_val_cpu),
+      .transducer_l15_rqtype        (icache_transducer_l15_rqtype_cpu),
+      .transducer_l15_nc            (icache_transducer_l15_nc_cpu),
+      .transducer_l15_size          (icache_transducer_l15_size_cpu),
+      .transducer_l15_l1rplway      (icache_transducer_l15_l1rplway_cpu),
+      .transducer_l15_address       (icache_transducer_l15_address_cpu),
 
-      .l15_transducer_header_ack                  (l15_transducer_header_ack),
-      .l15_transducer_ack                         (l15_transducer_ack),
+      .l15_transducer_header_ack    (icache_l15_transducer_header_ack_cpu),
+      .l15_transducer_ack           (icache_l15_transducer_ack_cpu),
+      .l15_transducer_val           (icache_l15_transducer_val_cpu),
+      .l15_transducer_returntype    (icache_l15_transducer_returntype_cpu),
+      .l15_transducer_error         (icache_l15_transducer_error_cpu),
+      .l15_transducer_noncacheable  (icache_l15_transducer_noncacheable_cpu),
+      .l15_transducer_data_0        (icache_l15_transducer_data_0_cpu),
+      .l15_transducer_data_1        (icache_l15_transducer_data_1_cpu),
+      .l15_transducer_data_2        (icache_l15_transducer_data_2_cpu),
+      .l15_transducer_data_3        (icache_l15_transducer_data_3_cpu),
 
-      .l15_transducer_val                         (l15_transducer_val),
-      .l15_transducer_returntype                  (l15_transducer_returntype),
-      //.l15_transducer_l2miss                      (l15_transducer_l2miss),
-      .l15_transducer_error                       (l15_transducer_error),
-      .l15_transducer_noncacheable                (l15_transducer_noncacheable),
-      //.l15_transducer_atomic                      (l15_transducer_atomic),
-      //.l15_transducer_threadid                    (l15_transducer_threadid),
-      //.l15_transducer_prefetch                    (l15_transducer_prefetch),
-      //.l15_transducer_f4b                         (l15_transducer_f4b),
-      .l15_transducer_data_0                      (l15_transducer_data_0),
-      .l15_transducer_data_1                      (l15_transducer_data_1),
-      .l15_transducer_data_2                      (l15_transducer_data_2),
-      .l15_transducer_data_3                      (l15_transducer_data_3),
-      //.l15_transducer_inval_icache_all_way        (l15_transducer_inval_icache_all_way),
-      //.l15_transducer_inval_dcache_all_way        (l15_transducer_inval_dcache_all_way),
-      //.l15_transducer_inval_address_15_4          (l15_transducer_inval_address_15_4),
-      //.l15_transducer_cross_invalidate            (l15_transducer_cross_invalidate),
-      //.l15_transducer_cross_invalidate_way        (l15_transducer_cross_invalidate_way),
-      //.l15_transducer_inval_dcache_inval          (l15_transducer_inval_dcache_inval),
-      //.l15_transducer_inval_icache_inval          (l15_transducer_inval_icache_inval),
-      //.l15_transducer_inval_way                   (l15_transducer_inval_way),
-      //.l15_transducer_blockinitstore              (l15_transducer_blockinitstore),
-
-      .transducer_l15_req_ack                     (transducer_l15_req_ack));
+      .transducer_l15_req_ack       (icache_transducer_l15_req_ack_cpu));
 
    /* mor1kx_decode AUTO_TEMPLATE (
     .decode_insn_i			(insn_fetch_to_decode),
@@ -1624,17 +1707,7 @@ module mor1kx_cpu_cappuccino
 
    assign transducer_l15_val = transducer_l15_val_ungated && wake_up_q;
 
-   // TODO: decide rqtype conditionally based on icache/dcache arbitration
-   assign transducer_l15_rqtype = `PCX_REQTYPE_IFILL;
-
-   // TODO: consider noncacheable?
-   assign transducer_l15_size = `MSG_DATA_SIZE_32B;
    assign transducer_l15_threadid = 1'b0;
-
-   // TODO: dcache
-   assign transducer_l15_amo_op = 1'b0;
-   assign transducer_l15_data = 64'b0;
-   assign transducer_l15_nc = 1'b0;
 
    // unused?
    assign transducer_l15_prefetch = 1'b0;
