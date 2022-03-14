@@ -273,7 +273,7 @@ module mor1kx_lsu_cappuccino
    assign transducer_l15_val = transducer_l15_val_r;
    assign transducer_l15_rqtype = transducer_l15_rqtype_r;
    assign transducer_l15_size = transducer_l15_size_r;
-   assign trasnducer_l15_req_ack = l15_transducer_val;
+   assign transducer_l15_req_ack = l15_transducer_val;
 
    assign transducer_l15_nc = !dc_enabled;
 
@@ -487,30 +487,24 @@ module mor1kx_lsu_cappuccino
           dbus_atomic <= 0;
           last_write <= 0;
           if (store_buffer_write | !store_buffer_empty) begin
-            transducer_l15_size_r <= (ctrl_lsu_length_i == 2'b00) ? // byte access
-              `MSG_DATA_SIZE_1B :
-              (ctrl_lsu_length_i == 2'b01) ? // halfword access
-              `MSG_DATA_SIZE_2B :
-              `MSG_DATA_SIZE_4B;             // word access
-            transducer_l15_rqtype_r <= `L15_REQTYPE_STORE;
             state <= WRITE;
           end else if (ctrl_op_lsu & dbus_access & !dc_refill & !dbus_ack &
             !dbus_err & !except_dbus & !access_done &
             !pipeline_flush_i) begin
             if (tlb_reload_req) begin
               dbus_adr <= tlb_reload_addr;
-              transducer_l15_val_r <= 1;
               block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
+              transducer_l15_val_r <= 1;
               state <= TLB_RELOAD;
             end else if (dmmu_enable_i) begin
               dbus_adr <= dmmu_phys_addr;
               if (!tlb_miss & !pagefault & !except_align) begin
                 if (ctrl_op_lsu_load_i) begin
+                  transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
+                  transducer_l15_rqtype_r <= (transducer_l15_nc) ? `L15_REQTYPE_LOAD_NC : `L15_REQTYPE_LOAD;
                   block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
                   transducer_l15_val_r <= 1;
                   dbus_bsel_o <= dbus_bsel;
-                  transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
-                  transducer_l15_rqtype_r <= (transducer_l15_nc) ? `L15_REQTYPE_LOAD_NC : `L15_REQTYPE_LOAD;
                   state <= READ;
                 end
               end
@@ -526,6 +520,7 @@ module mor1kx_lsu_cappuccino
               end
             end
           end else if (dc_refill_req) begin
+            transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
             transducer_l15_rqtype_r <= `L15_REQTYPE_LOAD;
             block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
             transducer_l15_val_r <= 1;
@@ -561,30 +556,36 @@ module mor1kx_lsu_cappuccino
 	end
 
 	WRITE: begin
-     block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
-	   transducer_l15_val_r <= 1;
 	   dbus_we <= 1;
 
-	   if (!transducer_l15_val_r | l15_dbus_ack & !last_write) begin
-	      dbus_bsel_o <= store_buffer_bsel;
-	      dbus_adr <= store_buffer_radr;
-	      dbus_dat <= store_buffer_dat;
-	      dbus_atomic <= store_buffer_atomic;
-	      last_write <= store_buffer_empty;
+     if (!dbus_we | l15_dbus_ack & !last_write) begin
+       transducer_l15_size_r <= (ctrl_lsu_length_i == 2'b00) ? // byte access
+         `MSG_DATA_SIZE_1B :
+         (ctrl_lsu_length_i == 2'b01) ? // halfword access
+         `MSG_DATA_SIZE_2B :
+         `MSG_DATA_SIZE_4B;             // word access
+       transducer_l15_rqtype_r <= `L15_REQTYPE_STORE;
+       block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
+       transducer_l15_val_r <= 1;
+
+       dbus_bsel_o <= store_buffer_bsel;
+       dbus_adr <= store_buffer_radr;
+       dbus_dat <= store_buffer_dat;
+       dbus_atomic <= store_buffer_atomic;
+       last_write <= store_buffer_empty;
 	   end
 
 	   if (store_buffer_write)
-	     last_write <= 0;
+       last_write <= 0;
 
-	   if (last_write & l15_dbus_ack | l15_transducer_error) begin
-	      transducer_l15_val_r <= 0;
-	      dbus_we <= 0;
-	      if (!store_buffer_write) begin
-		 state <= IDLE;
-		 write_done <= 1;
-	      end
-	   end
-	end
+     if (last_write & l15_dbus_ack | l15_transducer_error) begin
+       dbus_we <= 0;
+       if (!store_buffer_write) begin
+         state <= IDLE;
+         write_done <= 1;
+       end
+     end
+   end
 
 	TLB_RELOAD: begin
 	   dbus_adr <= tlb_reload_addr;
