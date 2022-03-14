@@ -75,7 +75,42 @@ module mor1kx_l15_arbiter
   output        transducer_l15_req_ack
 );
 
-  wire arb_idx = 0;
+  reg arb_idx = 0; // 0 for icache, 1 for dcache
+  reg ongoing_req = 0;
+
+  reg icache_transducer_l15_val_r; // icache is waiting to make a request
+  reg dcache_transducer_l15_val_r; // dcache is waiting to make a request
+
+  always @(posedge clk) begin
+    if(ongoing_req) begin
+      if(!arb_idx) begin
+        // ongoing icache request so store the dcache request
+        dcache_transducer_l15_val_r <= dcache_transducer_l15_val;
+      end
+      if (arb_idx) begin
+        // ongoing dcache request so store the icache request
+        icache_transducer_l15_val_r <= icache_transducer_l15_val;
+      end
+    end else begin
+      // no requests ongoing
+      if(dcache_transducer_l15_val | dcache_transducer_l15_val_r) begin
+        arb_idx <= 1;
+        ongoing_req <= 1;
+        dcache_transducer_l15_val_r <= 0;
+        if(icache_transducer_l15_val) begin
+          icache_transducer_l15_val_r <= icache_transducer_l15_val;
+        end
+      end else if(icache_transducer_l15_val | icache_transducer_l15_val_r) begin
+        arb_idx <= 0;
+        ongoing_req <= 1;
+        icache_transducer_l15_val_r <= 0;
+      end
+    end
+
+    if(l15_transducer_ack & ongoing_req) begin
+      ongoing_req <= 0;
+    end
+  end
 
   assign transducer_l15_val = (arb_idx) ? dcache_transducer_l15_val : icache_transducer_l15_val;
   assign transducer_l15_rqtype = (arb_idx) ? dcache_transducer_l15_rqtype : icache_transducer_l15_rqtype;
