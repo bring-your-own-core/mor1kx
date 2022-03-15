@@ -32,6 +32,7 @@ module mor1kx_l15_arbiter
   input [4:0]  dcache_transducer_l15_rqtype,
   input [3:0]  dcache_transducer_l15_amo_op,
   input [63:0] dcache_transducer_l15_data,
+  input [63:0] dcache_transducer_l15_data_next_entry,
   input [2:0]  dcache_transducer_l15_size,
   input        dcache_transducer_l15_nc,
   input [1:0]  dcache_transducer_l15_l1rplway,
@@ -71,6 +72,7 @@ module mor1kx_l15_arbiter
   output [1:0]  transducer_l15_l1rplway,
   output [39:0] transducer_l15_address,
   output [63:0] transducer_l15_data,
+  output [63:0] transducer_l15_data_next_entry,
 
   output        transducer_l15_req_ack
 );
@@ -106,6 +108,7 @@ module mor1kx_l15_arbiter
   assign transducer_l15_amo_op = dcache_transducer_l15_amo_op;
   //TODO endianness?
   assign transducer_l15_data = dcache_transducer_l15_data;
+  assign transducer_l15_data_next_entry = dcache_transducer_l15_data_next_entry;
 
   assign icache_l15_transducer_ack = l15_transducer_ack & (arb_idx == 0);
   assign icache_l15_transducer_header_ack = l15_transducer_header_ack & (arb_idx == 0);

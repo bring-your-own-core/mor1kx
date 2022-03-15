@@ -113,7 +113,7 @@ module mor1kx_lsu_cappuccino
     output [1:0]    transducer_l15_l1rplway,
     output [39:0]   transducer_l15_address,
     output [63:0]   transducer_l15_data,
-    // output [63:0]   transducer_l15_data_next_entry,
+    output [63:0]   transducer_l15_data_next_entry,
     // output [32:0]   transducer_l15_csm_data,
 
     input          l15_transducer_header_ack,
@@ -172,9 +172,11 @@ module mor1kx_lsu_cappuccino
     );
 
    reg transducer_l15_val_r;
-   reg transducer_l15_rqtype_r;
-   reg transducer_l15_size_r;
+   reg [4:0] transducer_l15_rqtype_r;
+   reg [2:0] transducer_l15_size_r;
    wire l15_dbus_ack;
+   reg [OPTION_DCACHE_BLOCK_WIDTH+2:0] block_index;
+   reg [2:0] store_byte_offset;
 
    reg [OPTION_OPERAND_WIDTH-1:0]    dbus_dat_aligned;  // comb.
    reg [OPTION_OPERAND_WIDTH-1:0]    dbus_dat_extended; // comb.
@@ -268,22 +270,6 @@ module mor1kx_lsu_cappuccino
 
    wire 			     snoop_valid;
    wire 			     dc_snoop_hit;
-
-
-   assign transducer_l15_val = transducer_l15_val_r;
-   assign transducer_l15_rqtype = transducer_l15_rqtype_r;
-   assign transducer_l15_size = transducer_l15_size_r;
-   assign transducer_l15_req_ack = l15_transducer_val;
-
-   assign transducer_l15_nc = !dc_enabled;
-
-   assign l15_dbus_ack = l15_transducer_val & (l15_transducer_returntype == `CPX_RESTYPE_STORE_ACK | l15_transducer_returntype == `CPX_RESTYPE_LOAD);
-
-   assign transducer_l15_address = {{(40-OPTION_OPERAND_WIDTH){1'b0}},dbus_adr};
-
-   // lsu_dat a 32 bit register but transducer_l15_data is 64 bits so we
-   // duplicate it
-   assign transducer_l15_data = {lsu_sdat, lsu_sdat};
 
    // We have to mask out our snooped bus accesses
    assign snoop_valid = (OPTION_DCACHE_SNOOP != "NONE") ?
@@ -389,6 +375,19 @@ module mor1kx_lsu_cappuccino
          dbus_bsel = 4'b1111;
      endcase
 
+   // map bsel to address offset
+   always @(*)
+     case(dbus_bsel_o)
+       4'b1000:
+         store_byte_offset = 2'd3;
+       4'b0100, 4'b1100:
+         store_byte_offset = 2'd2;
+       4'b0010:
+         store_byte_offset = 2'd1;
+       4'b0001, 4'b0011, 4'b1111:
+         store_byte_offset = 2'd0;
+     endcase
+
    // Select part of read word
    always @*
      case(ctrl_lsu_adr_i[1:0])
@@ -421,7 +420,6 @@ module mor1kx_lsu_cappuccino
 
    assign lsu_result_o = dbus_dat_extended;
 
-   // Bus access logic
    localparam [2:0]
      IDLE		= 3'd0,
      READ		= 3'd1,
@@ -431,11 +429,28 @@ module mor1kx_lsu_cappuccino
 
    reg [2:0] state;
 
+   // TRI logic
+   assign transducer_l15_val = transducer_l15_val_r;
+   assign transducer_l15_rqtype = transducer_l15_rqtype_r;
+   assign transducer_l15_size = transducer_l15_size_r;
+   assign transducer_l15_req_ack = l15_transducer_val;
+
+   assign transducer_l15_nc = !dc_enabled;
+
+   assign l15_dbus_ack = l15_transducer_val & (l15_transducer_returntype == `CPX_RESTYPE_STORE_ACK | l15_transducer_returntype == `CPX_RESTYPE_LOAD);
+
+   assign transducer_l15_address = {{(40-OPTION_OPERAND_WIDTH){1'b0}},dbus_adr
+   + ((state == WRITE) ? store_byte_offset : 2'd0)};
+
+   // dbus_dat is 16 bytes because that is the cacheline size, but the maximum
+   // openpiton can store is 8 bytes at a time (mor1kx can only do 4 bytes at a time)
+   assign transducer_l15_data = dbus_dat[63:0];
+   assign transducer_l15_data_next_entry = dbus_dat[127:64];
+
+   // Bus access logic
    assign dbus_access = (!dc_access | tlb_reload_busy | ctrl_op_lsu_store_i) &
 			(state != DC_REFILL) | (state == WRITE);
    reg      dc_refill_r;
-
-   reg [OPTION_DCACHE_BLOCK_WIDTH+2:0] block_index;
 
    always @(posedge clk)
      dc_refill_r <= dc_refill;
@@ -493,7 +508,7 @@ module mor1kx_lsu_cappuccino
             !pipeline_flush_i) begin
             if (tlb_reload_req) begin
               dbus_adr <= tlb_reload_addr;
-              block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
+              block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
               transducer_l15_val_r <= 1;
               state <= TLB_RELOAD;
             end else if (dmmu_enable_i) begin
@@ -501,8 +516,8 @@ module mor1kx_lsu_cappuccino
               if (!tlb_miss & !pagefault & !except_align) begin
                 if (ctrl_op_lsu_load_i) begin
                   transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
-                  transducer_l15_rqtype_r <= (transducer_l15_nc) ? `L15_REQTYPE_LOAD_NC : `L15_REQTYPE_LOAD;
-                  block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
+                  transducer_l15_rqtype_r <= `PCX_REQTYPE_LOAD;
+                  block_index <= dmmu_phys_addr[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
                   transducer_l15_val_r <= 1;
                   dbus_bsel_o <= dbus_bsel;
                   state <= READ;
@@ -511,18 +526,18 @@ module mor1kx_lsu_cappuccino
             end else if (!except_align) begin
               dbus_adr <= ctrl_lsu_adr_i;
               if (ctrl_op_lsu_load_i) begin
-                block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
+                block_index <= ctrl_lsu_adr_i[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
                 transducer_l15_val_r <= 1;
                 dbus_bsel_o <= dbus_bsel;
                 transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
-                transducer_l15_rqtype_r <= (transducer_l15_nc) ? `L15_REQTYPE_LOAD_NC : `L15_REQTYPE_LOAD;
+                transducer_l15_rqtype_r <= `PCX_REQTYPE_LOAD;
                 state <= READ;
               end
             end
           end else if (dc_refill_req) begin
             transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
-            transducer_l15_rqtype_r <= `L15_REQTYPE_LOAD;
-            block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
+            transducer_l15_rqtype_r <= `PCX_REQTYPE_LOAD;
+            block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
             transducer_l15_val_r <= 1;
             dbus_adr <= dc_adr_match;
             state <= DC_REFILL;
@@ -530,7 +545,7 @@ module mor1kx_lsu_cappuccino
         end
 
         DC_REFILL: begin
-          block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
+          block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
           if (l15_dbus_ack) begin
             dbus_adr <= next_dbus_adr;
             if (dc_refill_done) begin
@@ -548,7 +563,8 @@ module mor1kx_lsu_cappuccino
 
 	READ: begin
 	   dbus_ack <= l15_dbus_ack;
-	   dbus_dat <= {l15_transducer_data_0, l15_transducer_data_1};
+     dbus_dat <= {l15_transducer_data_1[31:0], l15_transducer_data_1[63:32],
+       l15_transducer_data_0[31:0], l15_transducer_data_0[63:32]};
 	   if (l15_dbus_ack | l15_transducer_error) begin
 	      transducer_l15_val_r <= 0;
 	      state <= IDLE;
@@ -564,13 +580,15 @@ module mor1kx_lsu_cappuccino
          (ctrl_lsu_length_i == 2'b01) ? // halfword access
          `MSG_DATA_SIZE_2B :
          `MSG_DATA_SIZE_4B;             // word access
-       transducer_l15_rqtype_r <= `L15_REQTYPE_STORE;
-       block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:0] << 3;
+       transducer_l15_rqtype_r <= `PCX_REQTYPE_STORE;
        transducer_l15_val_r <= 1;
 
        dbus_bsel_o <= store_buffer_bsel;
        dbus_adr <= store_buffer_radr;
-       dbus_dat <= store_buffer_dat;
+       // store_buffer_dat a 4 byte register but dbus_dat is 16 bytes bits so we
+       // duplicate it
+       dbus_dat <= {store_buffer_dat, store_buffer_dat, store_buffer_dat,
+         store_buffer_dat};
        dbus_atomic <= store_buffer_atomic;
        last_write <= store_buffer_empty;
 	   end

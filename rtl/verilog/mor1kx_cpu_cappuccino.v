@@ -242,6 +242,7 @@ module mor1kx_cpu_cappuccino
    wire [4:0]  dcache_transducer_l15_rqtype_cpu;
    wire [3:0]  dcache_transducer_l15_amo_op_cpu;
    wire [63:0] dcache_transducer_l15_data_cpu;
+   wire [63:0] dcache_transducer_l15_data_next_entry_cpu;
    wire [2:0]  dcache_transducer_l15_size_cpu;
    wire        dcache_transducer_l15_nc_cpu;
    wire [1:0]  dcache_transducer_l15_l1rplway_cpu;
@@ -535,6 +536,7 @@ module mor1kx_cpu_cappuccino
      .dcache_transducer_l15_rqtype(dcache_transducer_l15_rqtype_cpu),
      .dcache_transducer_l15_amo_op(dcache_transducer_l15_amo_op_cpu),
      .dcache_transducer_l15_data(dcache_transducer_l15_data_cpu),
+     .dcache_transducer_l15_data_next_entry(dcache_transducer_l15_data_next_entry_cpu),
      .dcache_transducer_l15_size(dcache_transducer_l15_size_cpu),
      .dcache_transducer_l15_nc(dcache_transducer_l15_nc_cpu),
      .dcache_transducer_l15_l1rplway(dcache_transducer_l15_l1rplway_cpu),
@@ -573,6 +575,7 @@ module mor1kx_cpu_cappuccino
      .transducer_l15_l1rplway(transducer_l15_l1rplway),
      .transducer_l15_address(transducer_l15_address),
      .transducer_l15_data(transducer_l15_data),
+     .transducer_l15_data_next_entry(transducer_l15_data_next_entry),
 
      .transducer_l15_req_ack(transducer_l15_req_ack));
 
@@ -1212,27 +1215,28 @@ module mor1kx_cpu_cappuccino
       .snoop_adr_i                      (snoop_adr_i[31:0]),
       .snoop_en_i                       (snoop_en_i),
       // TRI
-      .transducer_l15_val           (dcache_transducer_l15_val_cpu),
-      .transducer_l15_rqtype        (dcache_transducer_l15_rqtype_cpu),
-      .transducer_l15_amo_op        (dcache_transducer_l15_amo_op_cpu),
-      .transducer_l15_data          (dcache_transducer_l15_data_cpu),
-      .transducer_l15_size          (dcache_transducer_l15_size_cpu),
-      .transducer_l15_nc            (dcache_transducer_l15_nc_cpu),
-      .transducer_l15_l1rplway      (dcache_transducer_l15_l1rplway_cpu),
-      .transducer_l15_address       (dcache_transducer_l15_address_cpu),
+      .transducer_l15_val             (dcache_transducer_l15_val_cpu),
+      .transducer_l15_rqtype          (dcache_transducer_l15_rqtype_cpu),
+      .transducer_l15_amo_op          (dcache_transducer_l15_amo_op_cpu),
+      .transducer_l15_data            (dcache_transducer_l15_data_cpu),
+      .transducer_l15_data_next_entry (dcache_transducer_l15_data_next_entry_cpu),
+      .transducer_l15_size            (dcache_transducer_l15_size_cpu),
+      .transducer_l15_nc              (dcache_transducer_l15_nc_cpu),
+      .transducer_l15_l1rplway        (dcache_transducer_l15_l1rplway_cpu),
+      .transducer_l15_address         (dcache_transducer_l15_address_cpu),
 
-      .l15_transducer_header_ack    (dcache_l15_transducer_header_ack_cpu),
-      .l15_transducer_ack           (dcache_l15_transducer_ack_cpu),
-      .l15_transducer_val           (dcache_l15_transducer_val_cpu),
-      .l15_transducer_returntype    (dcache_l15_transducer_returntype_cpu),
-      .l15_transducer_error         (dcache_l15_transducer_error_cpu),
-      .l15_transducer_noncacheable  (dcache_l15_transducer_noncacheable_cpu),
-      .l15_transducer_data_0        (dcache_l15_transducer_data_0_cpu),
-      .l15_transducer_data_1        (dcache_l15_transducer_data_1_cpu),
-      .l15_transducer_data_2        (dcache_l15_transducer_data_2_cpu),
-      .l15_transducer_data_3        (dcache_l15_transducer_data_3_cpu),
+      .l15_transducer_header_ack      (dcache_l15_transducer_header_ack_cpu),
+      .l15_transducer_ack             (dcache_l15_transducer_ack_cpu),
+      .l15_transducer_val             (dcache_l15_transducer_val_cpu),
+      .l15_transducer_returntype      (dcache_l15_transducer_returntype_cpu),
+      .l15_transducer_error           (dcache_l15_transducer_error_cpu),
+      .l15_transducer_noncacheable    (dcache_l15_transducer_noncacheable_cpu),
+      .l15_transducer_data_0          (dcache_l15_transducer_data_0_cpu),
+      .l15_transducer_data_1          (dcache_l15_transducer_data_1_cpu),
+      .l15_transducer_data_2          (dcache_l15_transducer_data_2_cpu),
+      .l15_transducer_data_3          (dcache_l15_transducer_data_3_cpu),
 
-      .transducer_l15_req_ack       (dcache_transducer_l15_req_ack_cpu)
+      .transducer_l15_req_ack         (dcache_transducer_l15_req_ack_cpu)
     );
 
 
@@ -1742,7 +1746,6 @@ module mor1kx_cpu_cappuccino
    assign transducer_l15_invalidate_cacheline = 1'b0;
    assign transducer_l15_blockstore = 1'b0;
    assign transducer_l15_blockinitstore = 1'b0;
-   assign transducer_l15_data_next_entry = 64'b0;
    assign transducer_l15_csm_data = {`TLB_CSM_WIDTH{1'b0}};
 
    always @(posedge clk) begin
