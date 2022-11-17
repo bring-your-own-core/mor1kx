@@ -17,14 +17,16 @@
 ***************************************************************************** */
 
 `include "mor1kx-defines.v"
+`include "define.tmp.h"
+`include "l15.tmp.h"
 
 module mor1kx_lsu_cappuccino
   #(
     parameter FEATURE_DATACACHE	= "NONE",
     parameter OPTION_OPERAND_WIDTH = 32,
-    parameter OPTION_DCACHE_BLOCK_WIDTH = 5,
-    parameter OPTION_DCACHE_SET_WIDTH = 9,
-    parameter OPTION_DCACHE_WAYS = 2,
+    parameter OPTION_DCACHE_BLOCK_WIDTH = 4,
+    parameter OPTION_DCACHE_SET_WIDTH = 7,
+    parameter OPTION_DCACHE_WAYS = 4,
     parameter OPTION_DCACHE_LIMIT_WIDTH = 32,
     parameter OPTION_DCACHE_SNOOP = "NONE",
     parameter FEATURE_DMMU = "NONE",
@@ -98,21 +100,83 @@ module mor1kx_lsu_cappuccino
     input 			      supervisor_mode_i,
     output 			      dc_hit_o,
 
-    // interface to data bus
-    output [OPTION_OPERAND_WIDTH-1:0] dbus_adr_o,
-    output reg			      dbus_req_o,
-    output [OPTION_OPERAND_WIDTH-1:0] dbus_dat_o,
+    // TRI interface
+    output          transducer_l15_val,
+    output [4:0]    transducer_l15_rqtype,
+    output [3:0]    transducer_l15_amo_op,
+    output          transducer_l15_nc,
+    output [2:0]    transducer_l15_size,
+    // output          transducer_l15_prefetch,
+    // output          transducer_l15_invalidate_cacheline,
+    // output          transducer_l15_blockstore,
+    // output          transducer_l15_blockinitstore,
+    output [1:0]    transducer_l15_l1rplway,
+    output [39:0]   transducer_l15_address,
+    output [63:0]   transducer_l15_data,
+    output [63:0]   transducer_l15_data_next_entry,
+    // output [32:0]   transducer_l15_csm_data,
+
+    input          l15_transducer_header_ack,
+    input          l15_transducer_ack,
+
+    input          l15_transducer_val,
+    input [3:0]    l15_transducer_returntype,
+    // input          l15_transducer_l2miss,
+    input [1:0]    l15_transducer_error,
+    input          l15_transducer_noncacheable,
+    // input          l15_transducer_atomic,
+    // input          l15_transducer_threadid,
+    // input          l15_transducer_prefetch,
+    // input          l15_transducer_f4b,
+    input [63:0]   l15_transducer_data_0,
+    input [63:0]   l15_transducer_data_1,
+    input [63:0]   l15_transducer_data_2,
+    input [63:0]   l15_transducer_data_3,
+
+    output          transducer_l15_req_ack,
+    // input          l15_transducer_inval_icache_all_way,
+    // input          l15_transducer_inval_dcache_all_way,
+    // input [15:4]   l15_transducer_inval_address_15_4,
+    // input          l15_transducer_cross_invalidate,
+    // input [1:0]    l15_transducer_cross_invalidate_way,
+    // input          l15_transducer_inval_dcache_inval,
+    // input          l15_transducer_inval_icache_inval,
+    // input [1:0]    l15_transducer_inval_way,
+    // input          l15_transducer_blockinitstore,
+
+
+    // interface to ibus
+    // input   ibus_err_i,
+    // input   ibus_ack_i,
+    // input [`OR1K_INSN_WIDTH-1:0]   ibus_dat_i,
+    // output   ibus_req_o,
+    // output [OPTION_OPERAND_WIDTH-1:0]   ibus_adr_o,
+    // output   ibus_burst_o,
+    // interface to data bus    
+
+    // TODO: remove
+    // output [OPTION_OPERAND_WIDTH-1:0] dbus_adr_o,
+    // output reg			      dbus_req_o,
+    // output [OPTION_OPERAND_WIDTH-1:0] dbus_dat_o,
     output reg [3:0] 		      dbus_bsel_o,
     output 			      dbus_we_o,
-    output 			      dbus_burst_o,
-    input 			      dbus_err_i,
-    input 			      dbus_ack_i,
-    input [OPTION_OPERAND_WIDTH-1:0]  dbus_dat_i,
+    // output 			      dbus_burst_o,
+    // input 			      dbus_err_i,
+    // input 			      dbus_ack_i,
+    // input [OPTION_OPERAND_WIDTH-1:0]  dbus_dat_i,
+
     input 			      pipeline_flush_i,
 
     input [31:0] 		      snoop_adr_i,
     input 			      snoop_en_i
     );
+
+   reg transducer_l15_val_r;
+   reg [4:0] transducer_l15_rqtype_r;
+   reg [2:0] transducer_l15_size_r;
+   wire l15_dbus_ack;
+   reg [OPTION_DCACHE_BLOCK_WIDTH+2:0] block_index;
+   reg [2:0] store_byte_offset;
 
    reg [OPTION_OPERAND_WIDTH-1:0]    dbus_dat_aligned;  // comb.
    reg [OPTION_OPERAND_WIDTH-1:0]    dbus_dat_extended; // comb.
@@ -130,7 +194,7 @@ module mor1kx_lsu_cappuccino
 
    reg 				     dbus_ack;
    reg 				     dbus_err;
-   reg [OPTION_OPERAND_WIDTH-1:0]    dbus_dat;
+   reg [127:0]    dbus_dat; // hardcode to 16B
    reg [OPTION_OPERAND_WIDTH-1:0]    dbus_adr;
    wire [OPTION_OPERAND_WIDTH-1:0]   next_dbus_adr;
    reg 				     dbus_we;
@@ -209,7 +273,7 @@ module mor1kx_lsu_cappuccino
 
    // We have to mask out our snooped bus accesses
    assign snoop_valid = (OPTION_DCACHE_SNOOP != "NONE") ?
-                        snoop_en_i & !((snoop_adr_i == dbus_adr_o) & dbus_ack_i) :
+                        snoop_en_i & !((snoop_adr_i == dbus_adr) & l15_dbus_ack) :
                         0;
 
    assign ctrl_op_lsu = ctrl_op_lsu_load_i | ctrl_op_lsu_store_i;
@@ -259,7 +323,7 @@ module mor1kx_lsu_cappuccino
        except_dbus <= 0;
      else if (padv_execute_i | pipeline_flush_i)
        except_dbus <= 0;
-     else if (dbus_err_i)
+     else if (l15_transducer_error)
        except_dbus <= 1;
 
    always @(posedge clk `OR_ASYNC_RST)
@@ -283,33 +347,45 @@ module mor1kx_lsu_cappuccino
        store_buffer_err_o <= 0;
      else if (pipeline_flush_i)
        store_buffer_err_o <= 0;
-     else if (dbus_err_i & dbus_we_o)
+     else if (l15_transducer_error & dbus_we_o)
        store_buffer_err_o <= 1;
 
    // Big endian bus mapping
    always @(*)
      case (ctrl_lsu_length_i)
        2'b00: // byte access
-	 case(ctrl_lsu_adr_i[1:0])
-	   2'b00:
-	     dbus_bsel = 4'b1000;
-	   2'b01:
-	     dbus_bsel = 4'b0100;
-	   2'b10:
-	     dbus_bsel = 4'b0010;
-	   2'b11:
-	     dbus_bsel = 4'b0001;
-	 endcase
+         case(ctrl_lsu_adr_i[1:0])
+           2'b00:
+             dbus_bsel = 4'b1000;
+           2'b01:
+             dbus_bsel = 4'b0100;
+           2'b10:
+             dbus_bsel = 4'b0010;
+           2'b11:
+             dbus_bsel = 4'b0001;
+         endcase
        2'b01: // halfword access
-	    case(ctrl_lsu_adr_i[1])
-	      1'b0:
-		dbus_bsel = 4'b1100;
-	      1'b1:
-		dbus_bsel = 4'b0011;
-	    endcase
-       2'b10,
-       2'b11:
-	 dbus_bsel = 4'b1111;
+         case(ctrl_lsu_adr_i[1])
+           1'b0:
+             dbus_bsel = 4'b1100;
+           1'b1:
+             dbus_bsel = 4'b0011;
+         endcase
+       2'b10, 2'b11: // fullword access
+         dbus_bsel = 4'b1111;
+     endcase
+
+   // map bsel to address offset
+   always @(*)
+     case(dbus_bsel_o)
+       4'b1000:
+         store_byte_offset = 2'd3;
+       4'b0100, 4'b1100:
+         store_byte_offset = 2'd2;
+       4'b0010:
+         store_byte_offset = 2'd1;
+       4'b0001, 4'b0011, 4'b1111:
+         store_byte_offset = 2'd0;
      endcase
 
    // Select part of read word
@@ -344,7 +420,6 @@ module mor1kx_lsu_cappuccino
 
    assign lsu_result_o = dbus_dat_extended;
 
-   // Bus access logic
    localparam [2:0]
      IDLE		= 3'd0,
      READ		= 3'd1,
@@ -354,6 +429,25 @@ module mor1kx_lsu_cappuccino
 
    reg [2:0] state;
 
+   // TRI logic
+   assign transducer_l15_val = transducer_l15_val_r;
+   assign transducer_l15_rqtype = transducer_l15_rqtype_r;
+   assign transducer_l15_size = transducer_l15_size_r;
+   assign transducer_l15_req_ack = l15_transducer_val;
+
+   assign transducer_l15_nc = !dc_enabled;
+
+   assign l15_dbus_ack = l15_transducer_val & (l15_transducer_returntype == `CPX_RESTYPE_STORE_ACK | l15_transducer_returntype == `CPX_RESTYPE_LOAD);
+
+   assign transducer_l15_address = {{(40-OPTION_OPERAND_WIDTH){1'b0}},dbus_adr
+   + ((state == WRITE) ? store_byte_offset : 2'd0)};
+
+   // dbus_dat is 16 bytes because that is the cacheline size, but the maximum
+   // openpiton can store is 8 bytes at a time (mor1kx can only do 4 bytes at a time)
+   assign transducer_l15_data = dbus_dat[63:0];
+   assign transducer_l15_data_next_entry = dbus_dat[127:64];
+
+   // Bus access logic
    assign dbus_access = (!dc_access | tlb_reload_busy | ctrl_op_lsu_store_i) &
 			(state != DC_REFILL) | (state == WRITE);
    reg      dc_refill_r;
@@ -371,12 +465,7 @@ module mor1kx_lsu_cappuccino
 		     write_done & ctrl_op_lsu_atomic_i) :
 		    (dbus_access ? dbus_ack : dc_ack);
 
-   assign lsu_ldat = dbus_access ? dbus_dat : dc_ldat;
-   assign dbus_adr_o = dbus_adr;
-
-   assign dbus_dat_o = dbus_dat;
-
-   assign dbus_burst_o = (state == DC_REFILL) & !dc_refill_done;
+   assign lsu_ldat = dbus_access ? dbus_dat[block_index +: OPTION_OPERAND_WIDTH] : dc_ldat;
 
    //
    // Slightly subtle, but if there is an atomic store coming out from the
@@ -393,118 +482,142 @@ module mor1kx_lsu_cappuccino
      if (rst)
        dbus_err <= 0;
      else
-       dbus_err <= dbus_err_i;
+       dbus_err <= l15_transducer_error;
 
    always @(posedge clk) begin
       dbus_ack <= 0;
       write_done <= 0;
       tlb_reload_ack <= 0;
       tlb_reload_done <= 0;
+
+      if (l15_transducer_header_ack) begin
+        transducer_l15_val_r <= 0;
+      end
       case (state)
-	IDLE: begin
-	   dbus_req_o <= 0;
-	   dbus_we <= 0;
-	   dbus_adr <= 0;
-	   dbus_bsel_o <= 4'hf;
-	   dbus_atomic <= 0;
-	   last_write <= 0;
-	   if (store_buffer_write | !store_buffer_empty) begin
-	      state <= WRITE;
-	   end else if (ctrl_op_lsu & dbus_access & !dc_refill & !dbus_ack &
-			!dbus_err & !except_dbus & !access_done &
-			!pipeline_flush_i) begin
-	      if (tlb_reload_req) begin
-		 dbus_adr <= tlb_reload_addr;
-		 dbus_req_o <= 1;
-		 state <= TLB_RELOAD;
-	      end else if (dmmu_enable_i) begin
-		 dbus_adr <= dmmu_phys_addr;
-		 if (!tlb_miss & !pagefault & !except_align) begin
-		    if (ctrl_op_lsu_load_i) begin
-		       dbus_req_o <= 1;
-		       dbus_bsel_o <= dbus_bsel;
-		       state <= READ;
-		    end
-		 end
-	      end else if (!except_align) begin
-		 dbus_adr <= ctrl_lsu_adr_i;
-		 if (ctrl_op_lsu_load_i) begin
-		    dbus_req_o <= 1;
-		    dbus_bsel_o <= dbus_bsel;
-		    state <= READ;
-		 end
-	      end
-	   end else if (dc_refill_req) begin
-	      dbus_req_o <= 1;
-	      dbus_adr <= dc_adr_match;
-	      state <= DC_REFILL;
-	   end
-	end
+        IDLE: begin
+          transducer_l15_val_r <= 0;
+          dbus_we <= 0;
+          dbus_adr <= 0;
+          dbus_bsel_o <= 4'hf;
+          dbus_atomic <= 0;
+          last_write <= 0;
+          if (store_buffer_write | !store_buffer_empty) begin
+            state <= WRITE;
+          end else if (ctrl_op_lsu & dbus_access & !dc_refill & !dbus_ack &
+            !dbus_err & !except_dbus & !access_done &
+            !pipeline_flush_i) begin
+            if (tlb_reload_req) begin
+              dbus_adr <= tlb_reload_addr;
+              block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
+              transducer_l15_val_r <= 1;
+              state <= TLB_RELOAD;
+            end else if (dmmu_enable_i) begin
+              dbus_adr <= dmmu_phys_addr;
+              if (!tlb_miss & !pagefault & !except_align) begin
+                if (ctrl_op_lsu_load_i) begin
+                  transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
+                  transducer_l15_rqtype_r <= `PCX_REQTYPE_LOAD;
+                  block_index <= dmmu_phys_addr[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
+                  transducer_l15_val_r <= 1;
+                  dbus_bsel_o <= dbus_bsel;
+                  state <= READ;
+                end
+              end
+            end else if (!except_align) begin
+              dbus_adr <= ctrl_lsu_adr_i;
+              if (ctrl_op_lsu_load_i) begin
+                block_index <= ctrl_lsu_adr_i[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
+                transducer_l15_val_r <= 1;
+                dbus_bsel_o <= dbus_bsel;
+                transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
+                transducer_l15_rqtype_r <= `PCX_REQTYPE_LOAD;
+                state <= READ;
+              end
+            end
+          end else if (dc_refill_req) begin
+            transducer_l15_size_r <= `MSG_DATA_SIZE_16B;
+            transducer_l15_rqtype_r <= `PCX_REQTYPE_LOAD;
+            block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
+            transducer_l15_val_r <= 1;
+            dbus_adr <= dc_adr_match;
+            state <= DC_REFILL;
+          end
+        end
 
-	DC_REFILL: begin
-	   dbus_req_o <= 1;
-	   if (dbus_ack_i) begin
-	      dbus_adr <= next_dbus_adr;
-	      if (dc_refill_done) begin
-		 dbus_req_o <= 0;
-		 state <= IDLE;
-	      end
-	   end
+        DC_REFILL: begin
+          block_index <= dbus_adr[OPTION_DCACHE_BLOCK_WIDTH-1:2] << 5;
+          if (l15_dbus_ack) begin
+            dbus_adr <= next_dbus_adr;
+            if (dc_refill_done) begin
+              transducer_l15_val_r <= 0;
+              state <= IDLE;
+            end
+          end
 
-	   // TODO: only abort on snoop-hits to refill address
-	   if (dbus_err_i | dc_snoop_hit) begin
-	      dbus_req_o <= 0;
-	      state <= IDLE;
-	   end
-	end
+          // TODO: only abort on snoop-hits to refill address
+          if (l15_transducer_error | dc_snoop_hit) begin
+            transducer_l15_val_r <= 0;
+            state <= IDLE;
+          end
+        end
 
 	READ: begin
-	   dbus_ack <= dbus_ack_i;
-	   dbus_dat <= dbus_dat_i;
-	   if (dbus_ack_i | dbus_err_i) begin
-	      dbus_req_o <= 0;
+	   dbus_ack <= l15_dbus_ack;
+     dbus_dat <= {l15_transducer_data_1[31:0], l15_transducer_data_1[63:32],
+       l15_transducer_data_0[31:0], l15_transducer_data_0[63:32]};
+	   if (l15_dbus_ack | l15_transducer_error) begin
+	      transducer_l15_val_r <= 0;
 	      state <= IDLE;
 	   end
 	end
 
 	WRITE: begin
-	   dbus_req_o <= 1;
 	   dbus_we <= 1;
 
-	   if (!dbus_req_o | dbus_ack_i & !last_write) begin
-	      dbus_bsel_o <= store_buffer_bsel;
-	      dbus_adr <= store_buffer_radr;
-	      dbus_dat <= store_buffer_dat;
-	      dbus_atomic <= store_buffer_atomic;
-	      last_write <= store_buffer_empty;
+     if (!dbus_we | l15_dbus_ack & !last_write) begin
+       transducer_l15_size_r <= (ctrl_lsu_length_i == 2'b00) ? // byte access
+         `MSG_DATA_SIZE_1B :
+         (ctrl_lsu_length_i == 2'b01) ? // halfword access
+         `MSG_DATA_SIZE_2B :
+         `MSG_DATA_SIZE_4B;             // word access
+       transducer_l15_rqtype_r <= `PCX_REQTYPE_STORE;
+       transducer_l15_val_r <= 1;
+
+       dbus_bsel_o <= store_buffer_bsel;
+       dbus_adr <= store_buffer_radr;
+       // store_buffer_dat a 4 byte register but dbus_dat is 16 bytes bits so we
+       // duplicate it
+       dbus_dat <= {store_buffer_dat, store_buffer_dat, store_buffer_dat,
+         store_buffer_dat};
+       dbus_atomic <= store_buffer_atomic;
+       last_write <= store_buffer_empty;
 	   end
 
 	   if (store_buffer_write)
-	     last_write <= 0;
+       last_write <= 0;
 
-	   if (last_write & dbus_ack_i | dbus_err_i) begin
-	      dbus_req_o <= 0;
-	      dbus_we <= 0;
-	      if (!store_buffer_write) begin
-		 state <= IDLE;
-		 write_done <= 1;
-	      end
-	   end
-	end
+     if (last_write & l15_dbus_ack | l15_transducer_error) begin
+       dbus_we <= 0;
+       if (!store_buffer_write) begin
+         state <= IDLE;
+         write_done <= 1;
+       end
+     end
+   end
 
 	TLB_RELOAD: begin
 	   dbus_adr <= tlb_reload_addr;
-	   tlb_reload_data <= dbus_dat_i;
-	   tlb_reload_ack <= dbus_ack_i & tlb_reload_req;
+	   tlb_reload_data <= {{OPTION_OPERAND_WIDTH-1}{1'b0}};
+	   tlb_reload_ack <= 1'b0 & tlb_reload_req;
 
-	   if (!tlb_reload_req | dbus_err_i) begin
+	   if (!tlb_reload_req | l15_transducer_error) begin
 	      state <= IDLE;
 	      tlb_reload_done <= 1;
 	   end
 
-	   dbus_req_o <= tlb_reload_req;
-	   if (dbus_ack_i | tlb_reload_ack)
-	     dbus_req_o <= 0;
+	   transducer_l15_val_r <= tlb_reload_req;
+	   if (l15_dbus_ack | tlb_reload_ack)
+	     transducer_l15_val_r <= 0;
 	end
 
 	default:
@@ -595,7 +708,7 @@ generate
 if (FEATURE_STORE_BUFFER!="NONE") begin : store_buffer_gen
    assign store_buffer_read = (state == IDLE) & store_buffer_write |
 			      (state == IDLE) & !store_buffer_empty |
-			      (state == WRITE) & (dbus_ack_i | !dbus_req_o) &
+			      (state == WRITE) & (l15_dbus_ack | !transducer_l15_val_r) &
 			      (!store_buffer_empty | store_buffer_write) &
 			      !last_write |
 			      (state == WRITE) & last_write &
@@ -652,7 +765,7 @@ endgenerate
    always @(posedge clk `OR_ASYNC_RST)
      if (rst)
        dc_enable_r <= 0;
-     else if (dc_enable_i & !dbus_req_o)
+     else if (dc_enable_i & !transducer_l15_val_r)
        dc_enable_r <= 1;
      else if (!dc_enable_i & !dc_refill)
        dc_enable_r <= 0;
@@ -758,8 +871,8 @@ if (FEATURE_DATACACHE!="NONE") begin : dcache_gen
 	    .cpu_bsel_i			(dc_bsel),		 // Templated
 	    .refill_allowed		(dc_refill_allowed),	 // Templated
 	    .wradr_i			(dbus_adr),		 // Templated
-	    .wrdat_i			(dbus_dat_i),		 // Templated
-	    .we_i			(dbus_ack_i),		 // Templated
+	    .wrdat_i			(dbus_dat),		 // Templated
+	    .we_i			(l15_dbus_ack),		 // Templated
 	    .snoop_adr_i		(snoop_adr_i[31:0]),
 	    .snoop_valid_i		(snoop_valid),		 // Templated
 	    .spr_bus_addr_i		(spr_bus_addr_i[15:0]),

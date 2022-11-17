@@ -48,6 +48,7 @@ filesets:
       - rtl/verilog/mor1kx.v
       - rtl/verilog/mor1kx_wb_mux_cappuccino.v
       - rtl/verilog/mor1kx_wb_mux_espresso.v
+      - rtl/verilog/mor1kx_l15_arbiter.v
     file_type : verilogSource
 
   fpu:

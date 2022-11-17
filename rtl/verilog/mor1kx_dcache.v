@@ -282,9 +282,11 @@ module mor1kx_dcache
       end
    end
 
-   assign next_refill_adr = (OPTION_DCACHE_BLOCK_WIDTH == 5) ?
-			    {wradr_i[31:5], wradr_i[4:0] + 5'd4} : // 32 byte
-			    {wradr_i[31:4], wradr_i[3:0] + 4'd4};  // 16 byte
+   assign transducer_l15_l1rplway = 
+     (tag_save_lru == 4'b0001) ? 2'd0 : 
+     (tag_save_lru == 4'b0010) ? 2'd1 :
+     (tag_save_lru == 4'b0100) ? 2'd2 :
+     (tag_save_lru == 4'b1000) ? 2'd3 : 2'd0; 
 
    assign refill_done_o = refill_done;
    assign refill_done = refill_valid[next_refill_adr[OPTION_DCACHE_BLOCK_WIDTH-1:2]];
